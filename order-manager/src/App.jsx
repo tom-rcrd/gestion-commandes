@@ -672,29 +672,7 @@ const css = `
   .checkbox svg { color: white; }
 `;
 
-// ─── Main App ──────────────────────────────────────────────────
-export default function OrderManager() {
-  const [orders, setOrders] = useState([]);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingOrder, setEditingOrder] = useState(null);
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [sortKey, setSortKey] = useState("createdAt");
-  const [sortDir, setSortDir] = useState("desc");
-  const [selected, setSelected] = useState(new Set());
-  const [toasts, setToasts] = useState([]);
-  const toastId = useRef(0);
-  const [products, setProducts] = useState([]);
-const [productModalOpen, setProductModalOpen] = useState(false);
-
-
-  // Load from persistent storage
-  useEffect(() => {
-  loadOrders();
-  loadProducts();
-}, []);
-
-
+// ─── Product Modal ─────────────────────────────────────────────
 function ProductModal({ onSave, onClose }) {
   const [form, setForm] = useState({
     name: "",
@@ -792,40 +770,59 @@ function ProductModal({ onSave, onClose }) {
 
         <div className="modal-footer">
           <button className="btn" onClick={onClose}>Annuler</button>
-<button className="btn" onClick={() => setProductModalOpen(true)}>
-  + Article
-</button>
+          <button className="btn btn-primary" onClick={handleSubmit}>
+            Ajouter
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
+// ─── Main App ──────────────────────────────────────────────────
+export default function OrderManager() {
+  const [orders, setOrders] = useState([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [sortKey, setSortKey] = useState("createdAt");
+  const [sortDir, setSortDir] = useState("desc");
+  const [selected, setSelected] = useState(new Set());
+  const [toasts, setToasts] = useState([]);
+  const toastId = useRef(0);
+  const [products, setProducts] = useState([]);
+  const [productModalOpen, setProductModalOpen] = useState(false);
 
+  // Load from persistent storage
+  useEffect(() => {
+    loadOrders();
+    loadProducts();
+  }, []);
 
-async function loadProducts() {
-  const { data } = await supabase.from("products").select("*").order("name");
-  if (data) setProducts(data);
-}
+  async function loadProducts() {
+    const { data } = await supabase.from("products").select("*").order("name");
+    if (data) setProducts(data);
+  }
 
-async function loadOrders() {
-  const { data, error } = await supabase
-    .from("orders")
-    .select("*")
-    .order("createdAt", { ascending: false });
+  async function loadOrders() {
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .order("createdAt", { ascending: false });
 
-  if (!error && data) setOrders(data);
-}
+    if (!error && data) setOrders(data);
+  }
 
   // Save to persistent storage
-const saveOrders = useCallback(async (newOrders) => {
-  setOrders(newOrders);
+  const saveOrders = useCallback(async (newOrders) => {
+    setOrders(newOrders);
 
-  // On sync chaque ligne avec Supabase
-  for (const order of newOrders) {
-    await supabase.from("orders").upsert(order);
-  }
-}, []);
+    // On sync chaque ligne avec Supabase
+    for (const order of newOrders) {
+      await supabase.from("orders").upsert(order);
+    }
+  }, []);
 
   const toast = (msg) => {
     const id = ++toastId.current;
@@ -833,7 +830,21 @@ const saveOrders = useCallback(async (newOrders) => {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2500);
   };
 
-  // ─── CRUD ───
+  // ─── Product CRUD ───
+  const handleSaveProduct = async (product) => {
+    const newProduct = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      ...product,
+      createdAt: new Date().toISOString()
+    };
+
+    await supabase.from("products").insert(newProduct);
+    await loadProducts();
+    setProductModalOpen(false);
+    toast("Article ajouté");
+  };
+
+  // ─── Order CRUD ───
   const handleSave = (order) => {
     const exists = orders.find((o) => o.id === order.id);
     if (exists) {
@@ -847,26 +858,27 @@ const saveOrders = useCallback(async (newOrders) => {
     setEditingOrder(null);
   };
 
-const handleDelete = async (ids) => {
-  const idSet = new Set(ids);
+  const handleDelete = async (ids) => {
+    const idSet = new Set(ids);
 
-  const updated = orders.filter((o) => !idSet.has(o.id));
-  setOrders(updated);
-  setSelected(new Set());
-  toast("Supprimé");
+    const updated = orders.filter((o) => !idSet.has(o.id));
+    setOrders(updated);
+    setSelected(new Set());
+    toast("Supprimé");
 
-  await supabase.from("orders").delete().in("id", ids);
-};
+    await supabase.from("orders").delete().in("id", ids);
+  };
 
-const toggleField = async (id, field) => {
-  const updated = orders.map((o) =>
-    o.id === id ? { ...o, [field]: !o[field] } : o
-  );
-  saveOrders(updated);
+  const toggleField = async (id, field) => {
+    const updated = orders.map((o) =>
+      o.id === id ? { ...o, [field]: !o[field] } : o
+    );
+    saveOrders(updated);
 
-  const order = updated.find(o => o.id === id);
-  await supabase.from("orders").update({ [field]: order[field] }).eq("id", id);
-};
+    const order = updated.find(o => o.id === id);
+    await supabase.from("orders").update({ [field]: order[field] }).eq("id", id);
+  };
+
   // ─── Filter / Sort ───
   const filtered = orders.filter((o) => {
     if (filter === "unpaid") return !o.paid;
@@ -983,20 +995,18 @@ const toggleField = async (id, field) => {
 
   return (
     <>
-
-
       <style>{css}</style>
       <div className="app">
         {/* Header */}
         <div className="header">
-<button className="btn" onClick={() => setProductModalOpen(true)}>
-  <Icon d={icons.plus} size={14} /> Article
-</button>
           <div className="header-left">
             <h1>Commandes</h1>
             <span className="count">{orders.length} total</span>
           </div>
           <div className="header-actions">
+            <button className="btn" onClick={() => setProductModalOpen(true)}>
+              <Icon d={icons.plus} size={14} /> Article
+            </button>
             <button className="btn" onClick={() => exportCSV(sorted, "commandes.csv")}>
               <Icon d={icons.download} size={14} /> CSV
             </button>
@@ -1180,14 +1190,22 @@ const toggleField = async (id, field) => {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Order Modal */}
       {modalOpen && (
-<OrderModal
-  order={editingOrder}
-  products={products}   // ← AJOUTE ÇA
-  onSave={handleSave}
-  onClose={() => { setModalOpen(false); setEditingOrder(null); }}
-/>
+        <OrderModal
+          order={editingOrder}
+          products={products}
+          onSave={handleSave}
+          onClose={() => { setModalOpen(false); setEditingOrder(null); }}
+        />
+      )}
+
+      {/* Product Modal */}
+      {productModalOpen && (
+        <ProductModal
+          onSave={handleSaveProduct}
+          onClose={() => setProductModalOpen(false)}
+        />
       )}
 
       {/* Toasts */}
@@ -1198,7 +1216,6 @@ const toggleField = async (id, field) => {
           </div>
         ))}
       </div>
-      
     </>
   );
 }
@@ -1232,32 +1249,32 @@ function OrderModal({ order, products, onSave, onClose }) {
         <div className="modal-body">
           <div className="form-grid">
             {/* Item */}
-<div className="form-group form-full">
-  <label className="form-label">Article</label>
-  <div className="select-wrap">
-    <select
-      value={form.item}
-onChange={(e) => {
-  const product = products.find(p => p.name === e.target.value);
-  if (!product) return;
+            <div className="form-group form-full">
+              <label className="form-label">Article</label>
+              <div className="select-wrap">
+                <select
+                  value={form.item}
+                  onChange={(e) => {
+                    const product = products.find(p => p.name === e.target.value);
+                    if (!product) return;
 
-  setForm({
-    ...form,
-    item: product.name,
-    unitPrice: product.price
-  });
-}}
-    >
-      <option value="">Choisir un article</option>
-      {products.map(p => (
-        <option key={p.id} value={p.name}>
-          {p.name} — {p.price}€
-        </option>
-      ))}
-    </select>
-    <Icon d={icons.chevDown} size={14} />
-  </div>
-</div>
+                    setForm({
+                      ...form,
+                      item: product.name,
+                      unitPrice: product.price
+                    });
+                  }}
+                >
+                  <option value="">Choisir un article</option>
+                  {products.map(p => (
+                    <option key={p.id} value={p.name}>
+                      {p.name} — {p.price}€
+                    </option>
+                  ))}
+                </select>
+                <Icon d={icons.chevDown} size={14} />
+              </div>
+            </div>
 
             <div className="form-section-title">Client</div>
 
@@ -1287,9 +1304,9 @@ onChange={(e) => {
             <div className="form-group">
               <label className="form-label">Pays</label>
               <div className="select-wrap">
-<select value={form.country} onChange={set("country")}>
-  {COUNTRIES.map(c => <option key={c}>{c}</option>)}
-</select>
+                <select value={form.country} onChange={set("country")}>
+                  {COUNTRIES.map(c => <option key={c}>{c}</option>)}
+                </select>
                 <Icon d={icons.chevDown} size={14} />
               </div>
             </div>
